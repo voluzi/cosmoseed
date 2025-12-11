@@ -8,7 +8,7 @@ import (
 	"strconv"
 	"strings"
 
-	cosmoseed2 "github.com/NibiruChain/cosmoseed/pkg/cosmoseed"
+	cosmoseed2 "github.com/voluzi/cosmoseed/pkg/cosmoseed"
 )
 
 func main() {

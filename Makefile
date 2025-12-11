@@ -8,13 +8,13 @@ build:
 	CGO_ENABLED=0 go $@ \
 		-o build/ \
 		-mod=readonly \
-		-ldflags="-s -w -X github.com/NibiruChain/cosmoseed/pkg/cosmoseed.Version=$(VERSION) -X github.com/NibiruChain/cosmoseed/pkg/cosmoseed.CommitHash=$(COMMIT)" \
+		-ldflags="-s -w -X github.com/voluzi/cosmoseed/pkg/cosmoseed.Version=$(VERSION) -X github.com/voluzi/cosmoseed/pkg/cosmoseed.CommitHash=$(COMMIT)" \
 		./cmd/cosmoseed
 
 install:
 	CGO_ENABLED=0 go $@ \
 		-mod=readonly \
-		-ldflags="-s -w -X github.com/NibiruChain/cosmoseed/pkg/cosmoseed.Version=$(VERSION) -X github.com/NibiruChain/cosmoseed/pkg/cosmoseed.CommitHash=$(COMMIT)" \
+		-ldflags="-s -w -X github.com/voluzi/cosmoseed/pkg/cosmoseed.Version=$(VERSION) -X github.com/voluzi/cosmoseed/pkg/cosmoseed.CommitHash=$(COMMIT)" \
 		./cmd/cosmoseed
 
 mod:

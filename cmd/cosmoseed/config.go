@@ -5,7 +5,7 @@ import (
 	"os"
 	"path"
 
-	"github.com/NibiruChain/cosmoseed/internal/utils"
+	"github.com/voluzi/cosmoseed/internal/utils"
 )
 
 const (

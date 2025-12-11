@@ -4,7 +4,7 @@ import (
 	"os"
 	"testing"
 
-	"github.com/NibiruChain/cosmoseed/internal/utils"
+	"github.com/voluzi/cosmoseed/internal/utils"
 )
 
 func TestEnviron(t *testing.T) {

@@ -1,9 +1,9 @@
 # Cosmoseed
 
-[![Test](https://github.com/NibiruChain/cosmoseed/actions/workflows/test.yml/badge.svg)](https://github.com/NibiruChain/cosmoseed/actions/workflows/test.yml)
-[![GoReleaser](https://github.com/NibiruChain/cosmoseed/actions/workflows/goreleaser.yml/badge.svg)](https://github.com/NibiruChain/cosmoseed/actions/workflows/goreleaser.yml)
-[![Docker Builds](https://github.com/NibiruChain/cosmoseed/actions/workflows/docker.yml/badge.svg)](https://github.com/NibiruChain/cosmoseed/actions/workflows/docker.yml)
-[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/NibiruChain/cosmoseed/blob/main/LICENSE.md)
+[![Test](https://github.com/voluzi/cosmoseed/actions/workflows/test.yml/badge.svg)](https://github.com/voluzi/cosmoseed/actions/workflows/test.yml)
+[![GoReleaser](https://github.com/voluzi/cosmoseed/actions/workflows/goreleaser.yml/badge.svg)](https://github.com/voluzi/cosmoseed/actions/workflows/goreleaser.yml)
+[![Docker Builds](https://github.com/voluzi/cosmoseed/actions/workflows/docker.yml/badge.svg)](https://github.com/voluzi/cosmoseed/actions/workflows/docker.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/voluzi/cosmoseed/blob/main/LICENSE.md)
 
 **Cosmoseed** is a lightweight seed node for Cosmos-based blockchains.  
 Unlike traditional seed implementations, Cosmoseed actively filters out unreachable or failing peers, ensuring that only viable peers are served to clients.
@@ -25,7 +25,7 @@ Unlike traditional seed implementations, Cosmoseed actively filters out unreacha
 To quickly install on linux or darwin you can run:
 
 ```bash
-$ curl -s https://get.nibiru.fi/cosmoseed! | bash
+$ curl -s https://get.voluzi.com/cosmoseed! | bash
 ```
 
 Alternatively, you can download the binary from releases or use the available docker image.

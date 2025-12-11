@@ -22,8 +22,8 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/NibiruChain/cosmoseed/internal/cosmoseed.Version={{ .Version }}
-      - -X github.com/NibiruChain/cosmoseed/internal/cosmoseed.CommitHash={{ .Commit }}
+      - -X github.com/voluzi/cosmoseed/internal/cosmoseed.Version={{ .Version }}
+      - -X github.com/voluzi/cosmoseed/internal/cosmoseed.CommitHash={{ .Commit }}
 
   - id: linux
     main: ./cmd/cosmoseed
@@ -42,8 +42,8 @@ builds:
       - -trimpath
     ldflags:
       - -s -w
-      - -X github.com/NibiruChain/cosmoseed/internal/cosmoseed.Version={{ .Version }}
-      - -X github.com/NibiruChain/cosmoseed/internal/cosmoseed.CommitHash={{ .Commit }}
+      - -X github.com/voluzi/cosmoseed/internal/cosmoseed.Version={{ .Version }}
+      - -X github.com/voluzi/cosmoseed/internal/cosmoseed.CommitHash={{ .Commit }}
 
 universal_binaries:
   - id: darwin

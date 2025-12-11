@@ -1,4 +1,4 @@
-module github.com/NibiruChain/cosmoseed
+module github.com/voluzi/cosmoseed
 
 go 1.24.0
 
