@@ -5,7 +5,7 @@ go 1.27.0
 require (
 	github.com/cometbft/cometbft/api v1.1.0-rc1
 	github.com/cometbft/cometbft/v2 v2.0.0-rc1
-	github.com/creasty/defaults v1.10.0
+	github.com/creasty/defaults v1.11.0
 	gopkg.in/yaml.v3 v3.0.1
 )
 
