@@ -16,7 +16,7 @@ concurrency:
 jobs:
   version:
     name: Select image tags
-    runs-on: voluzi-on-prem
+    runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       version: ${{ steps.extract.outputs.version }}
@@ -52,10 +52,10 @@ jobs:
         build:
           - platform: linux/amd64
             arch: amd64
-            runner: voluzi-on-prem
+            runner: ubuntu-latest
           - platform: linux/arm64
             arch: arm64
-            runner: voluzi-on-prem-arm64
+            runner: ubuntu-24.04-arm
     runs-on: ${{ matrix.build.runner }}
     timeout-minutes: 45
     permissions:
@@ -127,7 +127,7 @@ jobs:
     needs:
       - version
       - build
-    runs-on: voluzi-on-prem
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
       packages: write
@@ -180,7 +180,7 @@ jobs:
       - version
       - merge
     if: needs.version.outputs.stable == 'true'
-    runs-on: voluzi-on-prem
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     concurrency:
       group: cosmoseed-stable-latest

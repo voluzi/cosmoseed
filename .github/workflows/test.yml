@@ -13,7 +13,7 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'voluzi-on-prem' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
       contents: read
