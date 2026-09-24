@@ -77,6 +77,71 @@ func TestConfigValidationRejectsInvalidAddresses(t *testing.T) {
 	}
 }
 
+func TestConfigValidatesExternalAddressHost(t *testing.T) {
+	tests := []struct {
+		name    string
+		address string
+		wantErr bool
+	}{
+		{name: "IPv4", address: "192.0.2.1:26656"},
+		{name: "IPv6", address: "[2001:db8::1]:26656"},
+		{name: "IPv4-mapped IPv6", address: "[::ffff:192.0.2.1]:26656"},
+		{name: "localhost", address: "localhost:26656"},
+		{name: "DNS hostname", address: "seed-1.example.com:26656"},
+		{name: "single-label hostname", address: "seed-1:26656"},
+		{name: "trailing-dot FQDN", address: "seed.example.com.:26656"},
+		{name: "maximum length label", address: strings.Repeat("a", 63) + ".example:26656"},
+		{name: "malformed IPv6", address: "[::::]:26656", wantErr: true},
+		{name: "malformed IPv6 groups", address: "[2001:db8:::1]:26656", wantErr: true},
+		{name: "IPv6 zone", address: "[fe80::1%eth0]:26656", wantErr: true},
+		{name: "slash", address: "bad/name:26656", wantErr: true},
+		{name: "space", address: "bad name:26656", wantErr: true},
+		{name: "tab", address: "bad\tname:26656", wantErr: true},
+		{name: "underscore", address: "bad_name:26656", wantErr: true},
+		{name: "empty middle label", address: "bad..name:26656", wantErr: true},
+		{name: "leading hyphen", address: "-bad.example:26656", wantErr: true},
+		{name: "trailing hyphen", address: "bad-.example:26656", wantErr: true},
+		{name: "overlong label", address: strings.Repeat("a", 64) + ".example:26656", wantErr: true},
+		{name: "overlong hostname", address: strings.Repeat("a", 63) + "." + strings.Repeat("b", 63) + "." + strings.Repeat("c", 63) + "." + strings.Repeat("d", 62) + ":26656", wantErr: true},
+		{name: "malformed dotted numeric IP", address: "999.999.999.999:26656", wantErr: true},
+		{name: "short numeric IP", address: "192.0.2:26656", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := DefaultConfig()
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.ChainID = "test"
+			cfg.ExternalAddress = tt.address
+			err = cfg.Validate()
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "externalAddress") {
+					t.Fatalf("accepted invalid external address %q: %v", tt.address, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("rejected valid external address %q: %v", tt.address, err)
+			}
+		})
+	}
+}
+
+func TestConfigLeavesBindAddressHostSyntaxUnchanged(t *testing.T) {
+	cfg, err := DefaultConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ChainID = "test"
+	cfg.ApiAddr = "bad/name:8080"
+	cfg.MetricsAddr = "bad_name:9090"
+	cfg.ListenAddr = "tcp://bad..name:26656"
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("bind address host syntax was tightened: %v", err)
+	}
+}
+
 func TestDurationConfigRoundTrip(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "config.yaml")
 	if err := os.WriteFile(path, []byte("chainID: test\nverificationTTL: 15m\nrecheckInterval: 30s\n"), 0o600); err != nil {

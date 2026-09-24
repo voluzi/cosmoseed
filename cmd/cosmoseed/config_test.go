@@ -107,6 +107,50 @@ func TestInvalidLogLevelOverrideDoesNotRewriteConfig(t *testing.T) {
 	}
 }
 
+func TestInvalidExternalAddressOverrideDoesNotRewriteConfig(t *testing.T) {
+	for _, tt := range []struct {
+		name  string
+		env   map[string]string
+		flags map[string]string
+	}{
+		{name: "environment", env: map[string]string{"EXTERNAL_ADDRESS": "bad/name:26656"}},
+		{name: "flag", env: map[string]string{"EXTERNAL_ADDRESS": "seed.example:26656"}, flags: map[string]string{"external-address": "[::::]:26656"}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			original := []byte("chainID: test\nexternalAddress: seed.example:26656\n")
+			if err := os.WriteFile(path, original, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			lookup := func(key string) (string, bool) { value, ok := tt.env[key]; return value, ok }
+			cfg, err := loadEffectiveConfig(path, lookup, tt.flags)
+			if err == nil {
+				if err := cfg.Save(path); err != nil {
+					t.Fatal(err)
+				}
+				t.Fatal("invalid external address override accepted")
+			}
+			if !strings.Contains(err.Error(), "externalAddress") {
+				t.Fatalf("error does not identify external address: %v", err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != string(original) {
+				t.Fatalf("config changed after rejected override: %q", got)
+			}
+			cfg, err = loadEffectiveConfig(path, func(string) (string, bool) { return "", false }, nil)
+			if err != nil {
+				t.Fatalf("override-free reload: %v", err)
+			}
+			if cfg.ExternalAddress != "seed.example:26656" {
+				t.Fatalf("reloaded external address = %q", cfg.ExternalAddress)
+			}
+		})
+	}
+}
+
 func TestShowNodeIDWorksWithoutOperationalConfig(t *testing.T) {
 	home := t.TempDir()
 	path := filepath.Join(home, "config.yaml")

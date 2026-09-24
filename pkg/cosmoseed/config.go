@@ -231,9 +231,45 @@ func validateHostPort(address string, requireHost bool) error {
 	if host == "" && requireHost {
 		return errors.New("empty host")
 	}
+	if requireHost {
+		if err := validateExternalHost(host); err != nil {
+			return err
+		}
+	}
 	n, err := strconv.Atoi(port)
 	if err != nil || n < 1 || n > 65535 {
 		return errors.New("invalid TCP port")
+	}
+	return nil
+}
+
+func validateExternalHost(host string) error {
+	if strings.Contains(host, ":") {
+		if net.ParseIP(host) == nil {
+			return errors.New("invalid IP address")
+		}
+		return nil
+	}
+	if net.ParseIP(host) != nil {
+		return nil
+	}
+	if strings.Contains(host, ".") && strings.Trim(host, "0123456789.") == "" {
+		return errors.New("invalid IP address")
+	}
+	host = strings.TrimSuffix(host, ".")
+	if host == "" || len(host) > 253 {
+		return errors.New("invalid hostname")
+	}
+	for _, label := range strings.Split(host, ".") {
+		if len(label) == 0 || len(label) > 63 || label[0] == '-' || label[len(label)-1] == '-' {
+			return errors.New("invalid hostname")
+		}
+		for i := 0; i < len(label); i++ {
+			c := label[i]
+			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
+				return errors.New("invalid hostname")
+			}
+		}
 	}
 	return nil
 }
