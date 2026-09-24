@@ -266,7 +266,9 @@ func validateExternalHost(host string) error {
 		}
 		for i := 0; i < len(label); i++ {
 			c := label[i]
-			if !(c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' || c == '-') {
+			isLetter := c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z'
+			isDigit := c >= '0' && c <= '9'
+			if !isLetter && !isDigit && c != '-' {
 				return errors.New("invalid hostname")
 			}
 		}
