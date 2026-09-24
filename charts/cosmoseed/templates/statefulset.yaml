@@ -1,6 +1,9 @@
 {{- if and .Values.config.externalAddresses (ne (len .Values.config.externalAddresses) (int .Values.replicaCount)) -}}
 {{- fail "config.externalAddresses must contain one address per replica" -}}
 {{- end -}}
+{{- if and .Values.existingConfigMap (not .Values.existingConfigMapChecksum) -}}
+{{- fail "existingConfigMapChecksum is required when existingConfigMap is set" -}}
+{{- end -}}
 {{- range .Values.config.externalAddresses -}}
 {{- if not (trim .) -}}{{- fail "config.externalAddresses must not contain empty entries" -}}{{- end -}}
 {{- end -}}
@@ -23,10 +26,9 @@ spec:
   template:
     metadata:
       labels:
-        {{- include "cosmoseed.selectorLabels" . | nindent 8 }}
-        {{- with .Values.podLabels }}{{- toYaml . | nindent 8 }}{{- end }}
+        {{- include "cosmoseed.podLabels" . | nindent 8 }}
       annotations:
-        checksum/config: {{ ternary (.Values.existingConfigMapChecksum | default .Values.existingConfigMap | sha256sum) (include (print $.Template.BasePath "/configmap.yaml") . | sha256sum) (ne .Values.existingConfigMap "") }}
+        checksum/config: {{ if .Values.existingConfigMap }}{{ .Values.existingConfigMapChecksum | sha256sum }}{{ else }}{{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}{{ end }}
         {{- with .Values.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
     spec:
       automountServiceAccountToken: false

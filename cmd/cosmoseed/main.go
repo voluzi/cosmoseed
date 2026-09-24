@@ -26,6 +26,14 @@ func main() {
 	flag.Visit(func(f *flag.Flag) { flags[f.Name] = f.Value.String() })
 	home = resolveHome(home, os.LookupEnv, flags)
 	cfgPath := filepath.Join(home, configFileName)
+	if showNodeID {
+		id, err := loadNodeID(home, cfgPath, os.LookupEnv, flags)
+		if err != nil {
+			panic(err)
+		}
+		fmt.Println(id)
+		return
+	}
 	cfg, err := loadEffectiveConfig(cfgPath, os.LookupEnv, flags)
 	if err != nil {
 		panic(err)
@@ -39,11 +47,6 @@ func main() {
 	seeder, err := cosmoseed2.NewSeeder(home, cfg)
 	if err != nil {
 		panic(err)
-	}
-
-	if showNodeID {
-		fmt.Println(seeder.GetNodeID())
-		os.Exit(0)
 	}
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -62,9 +65,6 @@ func extractIndexFromPodName(podName string) (int, error) {
 	index, err := strconv.Atoi(indexStr)
 	if err != nil {
 		return 0, fmt.Errorf("failed to parse index from pod name %q: %w", podName, err)
-	}
-	if index < 0 {
-		return 0, fmt.Errorf("negative pod ordinal in %q", podName)
 	}
 	return index, nil
 }

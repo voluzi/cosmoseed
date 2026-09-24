@@ -46,6 +46,7 @@ type Seeder struct {
 	running            atomic.Bool
 	mu                 sync.Mutex
 	startMu            sync.Mutex
+	startFailed        bool
 }
 
 func NewSeeder(home string, config *Config) (*Seeder, error) {
@@ -154,10 +155,16 @@ func (s *Seeder) Run(ctx context.Context) error {
 		return errors.New("seeder already stopped")
 	default:
 	}
+	if s.startFailed {
+		s.mu.Unlock()
+		s.startMu.Unlock()
+		return errors.New("seeder already stopped")
+	}
 	s.mu.Unlock()
 	startupFinished := false
 	defer func() {
 		if !startupFinished {
+			s.startFailed = true
 			s.startMu.Unlock()
 			_ = s.Stop()
 		}

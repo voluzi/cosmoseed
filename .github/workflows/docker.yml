@@ -11,7 +11,7 @@ permissions: {}
 
 concurrency:
   group: cosmoseed-image-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref == 'refs/heads/main' }}
 
 jobs:
   version:
@@ -51,8 +51,10 @@ jobs:
       matrix:
         build:
           - platform: linux/amd64
+            arch: amd64
             runner: voluzi-on-prem
           - platform: linux/arm64
+            arch: arm64
             runner: voluzi-on-prem-arm64
     runs-on: ${{ matrix.build.runner }}
     timeout-minutes: 45
@@ -64,13 +66,6 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
-
-      - name: Prepare env vars
-        run: |
-          OS=$(echo "${{ matrix.build.platform }}" | cut -d '/' -f 1)
-          ARCH=$(echo "${{ matrix.build.platform }}" | cut -d '/' -f 2)
-          echo "OS=$OS" >> $GITHUB_ENV
-          echo "ARCH=$ARCH" >> $GITHUB_ENV
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
@@ -122,7 +117,7 @@ jobs:
       - name: Hand off digest
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
-          name: digests-${{ env.ARCH }}
+          name: digests-${{ matrix.build.arch }}
           path: digests/*
           if-no-files-found: error
           retention-days: 1
@@ -163,7 +158,6 @@ jobs:
         env:
           IMAGE: ghcr.io/${{ github.repository }}
           VERSION: ${{ needs.version.outputs.version }}
-          STABLE: ${{ needs.version.outputs.stable }}
         run: |
           shopt -s nullglob
           digest_files=(digests/*)
@@ -172,9 +166,6 @@ jobs:
             exit 1
           fi
           tags=(--tag "${IMAGE}:${VERSION}")
-          if [[ "$GITHUB_REF" == refs/tags/v* && "$STABLE" == "true" ]]; then
-            tags+=(--tag "${IMAGE}:latest")
-          fi
           images=()
           for file in "${digest_files[@]}"; do
             images+=("${IMAGE}@sha256:${file##*/}")
@@ -182,3 +173,48 @@ jobs:
           docker buildx imagetools create \
             "${tags[@]}" \
             "${images[@]}"
+
+  latest:
+    name: Promote newest stable image to latest
+    needs:
+      - version
+      - merge
+    if: needs.version.outputs.stable == 'true'
+    runs-on: voluzi-on-prem
+    timeout-minutes: 15
+    concurrency:
+      group: cosmoseed-stable-latest
+      cancel-in-progress: false
+      queue: max
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout tags
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          fetch-depth: 0
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - name: Login to GHCR
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Promote only the newest stable tag
+        env:
+          IMAGE: ghcr.io/${{ github.repository }}
+          VERSION: ${{ needs.version.outputs.version }}
+        run: |
+          newest=$(git tag --list 'v*' | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+          if [[ "v${VERSION}" != "$newest" ]]; then
+            echo "Skipping latest: $newest is newer than v${VERSION}"
+            exit 0
+          fi
+          docker buildx imagetools create \
+            --tag "${IMAGE}:latest" \
+            "${IMAGE}:${VERSION}"

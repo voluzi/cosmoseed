@@ -13,6 +13,8 @@ Download a binary from [releases](https://github.com/voluzi/cosmoseed/releases),
 
 Copy [config.example.yaml](config.example.yaml) to `~/.cosmoseed/config.yaml`, set `chainID`, and optionally add known seeds. Then run `cosmoseed`. Config resolution is defaults → YAML → explicitly present environment variables → explicitly supplied flags. Only `CHAIN_ID`, `SEEDS`, `LOG_LEVEL`, `EXTERNAL_ADDRESS`, `POD_NAME`, and `HOME_DIR` have environment overrides. Unknown YAML fields are rejected. The effective config is saved atomically with mode `0600`, unless `--config-read-only` is set.
 
+`--show-node-id` loads or creates only the node key and prints its ID. It works without `chainID`, does not bind listeners, and does not rewrite `config.yaml`.
+
 For a one-off invocation:
 
 ```sh
@@ -40,6 +42,8 @@ The API listens on `apiAddr` (default `0.0.0.0:8080`):
 ## Kubernetes
 
 The [Helm chart](charts/cosmoseed) uses a persistent StatefulSet, one PVC per replica, a headless P2P service, separate API and metrics services, health probes, and restrictive pod security settings. Set `config.chainID` and choose a reachable address per replica in `config.externalAddresses` when publishing seeds outside the cluster. With those addresses configured, the chart creates one P2P Service per pod; each Service selects only that pod, avoiding a load-balanced node-ID endpoint. Match each configured address to its service's reachable address. Chart and app versions are independent: a chart-only change increments `version`, while `appVersion` names the default image tag. ServiceMonitor is optional and selects only the metrics Service.
+
+If supplying `existingConfigMap`, also set `existingConfigMapChecksum` to a value that changes whenever that ConfigMap's contents change; the chart uses it to trigger a rollout.
 
 ```sh
 helm template seed charts/cosmoseed --set config.chainID=my-chain

@@ -18,6 +18,7 @@ type outboundTestPeer struct {
 }
 
 func (p *outboundTestPeer) IsOutbound() bool          { return true }
+func (p *outboundTestPeer) IsRunning() bool           { return true }
 func (p *outboundTestPeer) ID() string                { return p.id }
 func (p *outboundTestPeer) SocketAddr() *na.NetAddr   { return p.addr }
 func (p *outboundTestPeer) Send(e p2p.Envelope) error { p.sent = append(p.sent, e); return nil }
@@ -97,5 +98,48 @@ func TestExpiredBanReturnsOnlyAsUnverifiedCandidate(t *testing.T) {
 	}
 	if len(r.addrChan) != 1 {
 		t.Fatalf("reinstated peer was not queued: %d", len(r.addrChan))
+	}
+}
+
+func TestAuthenticatedEndpointReplacesCandidateForSameID(t *testing.T) {
+	book := pex.NewAddrBook(t.TempDir()+"/book.json", false)
+	old, err := na.NewFromString("0123456789abcdef0123456789abcdef01234567@127.0.0.1:26656")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := na.NewFromString("0123456789abcdef0123456789abcdef01234567@127.0.0.2:26656")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := book.AddAddress(old, old); err != nil {
+		t.Fatal(err)
+	}
+	r := NewReactor(book, nil, 10, 1, false, time.Hour, time.Minute, 5, time.Hour)
+	r.AddPeer(&outboundTestPeer{addr: replacement, id: replacement.ID})
+	selection := book.GetSelection()
+	if len(selection) != 1 || selection[0].String() != replacement.String() {
+		t.Fatalf("candidate endpoint = %v", selection)
+	}
+	if got := r.VerifiedCount(); got != 1 {
+		t.Fatalf("verified endpoint count = %d", got)
+	}
+}
+
+func TestConnectedOutboundPeerRefreshesBeforeTTLExpiry(t *testing.T) {
+	book := pex.NewAddrBook(t.TempDir()+"/book.json", false)
+	addr, err := na.NewFromString("0123456789abcdef0123456789abcdef01234567@127.0.0.1:26656")
+	if err != nil {
+		t.Fatal(err)
+	}
+	r := NewReactor(book, nil, 10, 1, false, time.Hour, time.Minute, 5, time.Hour)
+	now := time.Now()
+	r.verified.now = func() time.Time { return now }
+	peer := &outboundTestPeer{addr: addr, id: addr.ID}
+	r.AddPeer(peer)
+	now = now.Add(45 * time.Minute)
+	r.refreshConnectedPeers([]p2p.Peer{peer})
+	now = now.Add(30 * time.Minute)
+	if got := r.VerifiedCount(); got != 1 {
+		t.Fatalf("connected outbound proof expired: %d", got)
 	}
 }

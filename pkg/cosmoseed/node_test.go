@@ -293,3 +293,24 @@ func TestDuplicateRunDoesNotStopActiveInstance(t *testing.T) {
 		t.Fatal("first Run did not stop")
 	}
 }
+
+func TestFailedStartupStateRejectsSecondRunBeforeCleanup(t *testing.T) {
+	cfg, err := DefaultConfig()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cfg.ChainID = "test"
+	s, err := NewSeeder(t.TempDir(), cfg)
+	if err != nil {
+		t.Fatal(err)
+	}
+	s.startMu.Lock()
+	s.startFailed = true
+	s.startMu.Unlock()
+	if err := s.Run(t.Context()); err == nil || !strings.Contains(err.Error(), "already stopped") {
+		t.Fatalf("second Run = %v", err)
+	}
+	if err := s.Stop(); err != nil {
+		t.Fatal(err)
+	}
+}

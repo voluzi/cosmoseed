@@ -32,12 +32,13 @@ type verifiedStore struct {
 	book      pex.AddrBook
 	ttl       time.Duration
 	peers     map[string]verifiedPeer
+	byID      map[string]string
 	now       func() time.Time
 	evictions atomic.Uint64
 }
 
 func newVerifiedStore(book pex.AddrBook, ttl time.Duration) *verifiedStore {
-	return &verifiedStore{book: book, ttl: ttl, peers: make(map[string]verifiedPeer), now: time.Now}
+	return &verifiedStore{book: book, ttl: ttl, peers: make(map[string]verifiedPeer), byID: make(map[string]string), now: time.Now}
 }
 
 func (s *verifiedStore) record(addr *na.NetAddr) {
@@ -46,10 +47,8 @@ func (s *verifiedStore) record(addr *na.NetAddr) {
 	}
 	s.mu.Lock()
 	key := addr.String()
-	for existing, peer := range s.peers {
-		if peer.addr.ID == addr.ID && existing != key {
-			delete(s.peers, existing)
-		}
+	if existing := s.byID[addr.ID]; existing != "" && existing != key {
+		delete(s.peers, existing)
 	}
 	if _, exists := s.peers[key]; !exists && len(s.peers) >= maxVerifiedEntries {
 		oldestKey := ""
@@ -59,10 +58,13 @@ func (s *verifiedStore) record(addr *na.NetAddr) {
 				oldestKey, oldest = existing, peer.checked
 			}
 		}
+		oldestPeer := s.peers[oldestKey]
 		delete(s.peers, oldestKey)
+		delete(s.byID, oldestPeer.addr.ID)
 		s.evictions.Add(1)
 	}
 	s.peers[key] = verifiedPeer{addr: addr, checked: s.now()}
+	s.byID[addr.ID] = key
 	s.mu.Unlock()
 }
 
@@ -72,16 +74,16 @@ func (s *verifiedStore) forget(addr *na.NetAddr) {
 	}
 	s.mu.Lock()
 	delete(s.peers, addr.String())
+	if s.byID[addr.ID] == addr.String() {
+		delete(s.byID, addr.ID)
+	}
 	s.mu.Unlock()
 }
 
 func (s *verifiedStore) forgetID(id string) {
 	s.mu.Lock()
-	for key, peer := range s.peers {
-		if peer.addr.ID == id {
-			delete(s.peers, key)
-		}
-	}
+	delete(s.peers, s.byID[id])
+	delete(s.byID, id)
 	s.mu.Unlock()
 }
 
@@ -130,6 +132,9 @@ func (s *verifiedStore) freshEntries() []verifiedPeer {
 		for key, entry := range stale {
 			if current, ok := s.peers[key]; ok && current.checked.Equal(entry.checked) {
 				delete(s.peers, key)
+				if s.byID[entry.addr.ID] == key {
+					delete(s.byID, entry.addr.ID)
+				}
 			}
 		}
 		s.mu.Unlock()

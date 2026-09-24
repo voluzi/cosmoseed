@@ -2,8 +2,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "cosmoseed.fullname" . }}
-  labels: {{- include "cosmoseed.labels" . | nindent 4 }}
-    cosmoseed.voluzi.com/service-role: client
+  labels: {{- include "cosmoseed.serviceLabels" (dict "root" . "role" "client") | nindent 4 }}
   {{- with .Values.service.annotations }}
   annotations: {{- toYaml . | nindent 4 }}
   {{- end }}
@@ -19,8 +18,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "cosmoseed.fullname" . }}-metrics
-  labels: {{- include "cosmoseed.labels" . | nindent 4 }}
-    cosmoseed.voluzi.com/service-role: metrics
+  labels: {{- include "cosmoseed.serviceLabels" (dict "root" . "role" "metrics") | nindent 4 }}
   {{- with .Values.metricsService.annotations }}
   annotations: {{- toYaml . | nindent 4 }}
   {{- end }}
@@ -36,8 +34,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "cosmoseed.fullname" . }}-headless
-  labels: {{- include "cosmoseed.labels" . | nindent 4 }}
-    cosmoseed.voluzi.com/service-role: headless
+  labels: {{- include "cosmoseed.serviceLabels" (dict "root" . "role" "headless") | nindent 4 }}
 spec:
   clusterIP: None
   publishNotReadyAddresses: true
@@ -53,8 +50,7 @@ apiVersion: v1
 kind: Service
 metadata:
   name: {{ include "cosmoseed.fullname" $ }}-{{ $ordinal }}-p2p
-  labels: {{- include "cosmoseed.labels" $ | nindent 4 }}
-    cosmoseed.voluzi.com/service-role: p2p
+  labels: {{- include "cosmoseed.serviceLabels" (dict "root" $ "role" "p2p") | nindent 4 }}
   {{- with $.Values.p2pService.annotations }}
   annotations: {{- toYaml . | nindent 4 }}
   {{- end }}

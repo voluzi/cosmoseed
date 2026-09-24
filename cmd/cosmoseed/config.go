@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/cometbft/cometbft/v2/p2p"
 	"github.com/voluzi/cosmoseed/pkg/cosmoseed"
 )
 
@@ -140,4 +141,39 @@ func resolveHome(defaultHome string, lookup func(string) (string, bool), flags m
 		home = value
 	}
 	return home
+}
+
+func loadNodeID(home, configPath string, lookup func(string) (string, bool), flags map[string]string) (string, error) {
+	cfg, err := cosmoseed.ReadConfigFromFile(configPath)
+	if err != nil {
+		return "", err
+	}
+	if cfg == nil {
+		cfg, err = cosmoseed.DefaultConfig()
+		if err != nil {
+			return "", err
+		}
+	}
+	pod, _ := lookup("POD_NAME")
+	if value, ok := flags["pod-name"]; ok {
+		pod = value
+	}
+	if pod != "" {
+		if _, err := extractIndexFromPodName(pod); err != nil {
+			return "", err
+		}
+		if strings.ContainsAny(pod, `/\`) {
+			return "", fmt.Errorf("invalid pod name %q", pod)
+		}
+		cfg.NodeKeyFile = pod
+	}
+	keyPath := filepath.Join(home, cfg.NodeKeyFile)
+	if err := os.MkdirAll(filepath.Dir(keyPath), 0700); err != nil {
+		return "", err
+	}
+	key, err := p2p.LoadOrGenNodeKey(keyPath)
+	if err != nil {
+		return "", err
+	}
+	return key.ID(), nil
 }

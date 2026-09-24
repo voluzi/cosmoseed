@@ -129,3 +129,32 @@ func TestPrunedPeerIsNotServed(t *testing.T) {
 		t.Fatalf("pruned peer served: %v", got)
 	}
 }
+
+func TestIgnoredAlternativeGossipPreservesVerifiedEndpoint(t *testing.T) {
+	book := pex.NewAddrBook(t.TempDir()+"/book.json", false)
+	store := newVerifiedStore(book, time.Hour)
+	old, err := na.NewFromString("0123456789abcdef0123456789abcdef01234567@127.0.0.1:26656")
+	if err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := na.NewFromString("0123456789abcdef0123456789abcdef01234567@127.0.0.2:26656")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := book.AddAddress(old, old); err != nil {
+		t.Fatal(err)
+	}
+	book.MarkGood(old.ID)
+	store.record(old)
+	serving := &servingBook{AddrBook: book, verified: store}
+	if err := serving.AddAddress(replacement, replacement); err != nil {
+		t.Fatal(err)
+	}
+	selection := book.GetSelection()
+	if len(selection) != 1 || selection[0].String() != old.String() {
+		t.Fatalf("book replaced a good endpoint: %v", selection)
+	}
+	if got := store.count(); got != 1 {
+		t.Fatalf("ignored gossip revoked proof: %d", got)
+	}
+}

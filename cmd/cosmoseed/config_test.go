@@ -105,3 +105,29 @@ func TestInvalidLogLevelOverrideDoesNotRewriteConfig(t *testing.T) {
 		t.Fatalf("config changed after rejected override: %q", got)
 	}
 }
+
+func TestShowNodeIDWorksWithoutOperationalConfig(t *testing.T) {
+	home := t.TempDir()
+	path := filepath.Join(home, "config.yaml")
+	original := []byte("nodeKeyFile: offline-key.json\napiAddr: invalid\n")
+	if err := os.WriteFile(path, original, 0600); err != nil {
+		t.Fatal(err)
+	}
+	id, err := loadNodeID(home, path, func(string) (string, bool) { return "", false }, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(id) != 40 {
+		t.Fatalf("node ID = %q", id)
+	}
+	if _, err := os.Stat(filepath.Join(home, "offline-key.json")); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(got) != string(original) {
+		t.Fatalf("show-node-id rewrote config: %q", got)
+	}
+}

@@ -96,6 +96,9 @@ func ReadConfigFromFile(path string) (*Config, error) {
 	decoder := yaml.NewDecoder(strings.NewReader(string(f)))
 	decoder.KnownFields(true)
 	err = decoder.Decode(cfg)
+	if errors.Is(err, io.EOF) {
+		return cfg, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("decode config file: %w", err)
 	}
@@ -116,7 +119,8 @@ func (cfg *Config) Validate() error {
 	if _, err := log.AllowLevel(cfg.LogLevel); err != nil {
 		return fmt.Errorf("logLevel: %w", err)
 	}
-	for name, address := range map[string]string{"apiAddr": cfg.ApiAddr, "metricsAddr": cfg.MetricsAddr, "externalAddress": cfg.ExternalAddress} {
+	for _, item := range []struct{ name, address string }{{"apiAddr", cfg.ApiAddr}, {"metricsAddr", cfg.MetricsAddr}, {"externalAddress", cfg.ExternalAddress}} {
+		name, address := item.name, item.address
 		if (name == "externalAddress" || name == "metricsAddr") && address == "" {
 			continue
 		}
@@ -139,10 +143,47 @@ func (cfg *Config) Validate() error {
 	if cfg.MaxDialFailures <= 0 || cfg.MinReadyPeers < 0 {
 		return errors.New("maxDialFailures must be positive and minReadyPeers nonnegative")
 	}
-	if cfg.MetricsAddr != "" && cfg.ApiAddr == cfg.MetricsAddr {
-		return errors.New("apiAddr and metricsAddr must differ")
+	if cfg.MetricsAddr != "" && listenerAddressesOverlap(cfg.ApiAddr, cfg.MetricsAddr) {
+		return errors.New("apiAddr and metricsAddr overlap")
 	}
 	return nil
+}
+
+func listenerAddressesOverlap(first, second string) bool {
+	firstHost, firstPort, _ := net.SplitHostPort(first)
+	secondHost, secondPort, _ := net.SplitHostPort(second)
+	if firstPort != secondPort {
+		return false
+	}
+	firstHost, secondHost = strings.ToLower(firstHost), strings.ToLower(secondHost)
+	if firstHost == secondHost {
+		return true
+	}
+	if firstHost == "" || secondHost == "" {
+		return true
+	}
+	firstIP, secondIP := net.ParseIP(firstHost), net.ParseIP(secondHost)
+	if firstIP != nil && secondIP != nil {
+		if firstIP.IsUnspecified() && firstIP.To4() == nil {
+			return true
+		}
+		if secondIP.IsUnspecified() && secondIP.To4() == nil {
+			return true
+		}
+		if (firstIP.To4() == nil) != (secondIP.To4() == nil) {
+			return false
+		}
+		return firstIP.IsUnspecified() || secondIP.IsUnspecified() || firstIP.Equal(secondIP)
+	}
+	if firstHost == "localhost" || secondHost == "localhost" {
+		other := firstHost
+		if firstHost == "localhost" {
+			other = secondHost
+		}
+		otherIP := net.ParseIP(other)
+		return other == "localhost" || otherIP != nil && (otherIP.IsLoopback() || otherIP.IsUnspecified())
+	}
+	return firstIP != nil && firstIP.IsUnspecified() || secondIP != nil && secondIP.IsUnspecified()
 }
 
 func validateHostPort(address string, requireHost bool) error {

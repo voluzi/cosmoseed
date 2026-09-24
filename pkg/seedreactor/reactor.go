@@ -154,7 +154,25 @@ func (s *SeedReactor) recheck() {
 	s.book.ReinstateBadPeers()
 	s.verified.count()
 	s.pruneFailures()
+	if s.Switch != nil {
+		s.refreshConnectedPeers(s.Switch.Peers().Copy())
+	}
 	s.queueCandidates()
+}
+
+func (s *SeedReactor) refreshConnectedPeers(peers []p2p.Peer) {
+	for _, peer := range peers {
+		if peer == nil || !peer.IsRunning() || !peer.IsOutbound() {
+			continue
+		}
+		addr := peer.SocketAddr()
+		if addr == nil || addr.ID != peer.ID() || (s.strict && !addr.Routable()) {
+			continue
+		}
+		if !s.verified.freshFor(addr, s.verified.ttl/2) {
+			s.recordAuthenticated(addr)
+		}
+	}
 }
 
 func (s *SeedReactor) pruneFailures() {
@@ -184,15 +202,22 @@ func (s *SeedReactor) AddPeer(p p2p.Peer) {
 		return
 	}
 
-	if !s.book.HasAddress(addr) {
-		if err := s.book.AddAddress(addr, addr); err != nil {
+	if s.recordAuthenticated(addr) {
+		s.authenticated.Add(1)
+	}
+}
+
+func (s *SeedReactor) recordAuthenticated(addr *na.NetAddr) bool {
+	if !s.verified.freshFor(addr, s.verified.ttl) {
+		// Install the authenticated endpoint before MarkGood makes its ID immutable to alternate gossip.
+		s.serving.RemoveAddress(addr)
+		if err := s.serving.AddAddress(addr, addr); err != nil {
 			s.log.Debug("unable to add authenticated peer", "err", err)
-			return
+			return false
 		}
 	}
 	s.book.MarkGood(addr.ID)
 	s.verified.record(addr)
-	s.authenticated.Add(1)
 	s.pendingMu.Lock()
 	for key, failedAddr := range s.failureAddresses {
 		if failedAddr.ID == addr.ID {
@@ -202,6 +227,7 @@ func (s *SeedReactor) AddPeer(p p2p.Peer) {
 		}
 	}
 	s.pendingMu.Unlock()
+	return true
 }
 
 func (s *SeedReactor) Receive(e p2p.Envelope) {
