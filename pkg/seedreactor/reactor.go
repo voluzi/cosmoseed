@@ -282,6 +282,11 @@ func (s *SeedReactor) processAddr(addr *AddrPair) {
 		s.log.Debug("already dialing or connected", "addr", addr)
 		return
 	}
+	outbound, _, dialing := s.Switch.NumPeers()
+	if outbound+dialing >= s.Switch.MaxNumOutboundPeers() {
+		s.log.Debug("outbound peer capacity reached", "addr", addr)
+		return
+	}
 	s.attempts.Add(1)
 	err := s.Switch.DialPeerWithAddress(addr.Addr)
 	if err != nil {
