@@ -2,6 +2,7 @@ package cosmoseed
 
 import (
 	"context"
+	"errors"
 	"net"
 	"net/http"
 	"os"
@@ -10,7 +11,13 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/cometbft/cometbft/v2/p2p"
 )
+
+type rejectingStartupReactor struct{ *p2p.BaseReactor }
+
+func (*rejectingStartupReactor) OnStart() error { return errors.New("injected startup failure") }
 
 func distinctAvailableAddresses(t *testing.T, count int) []string {
 	t.Helper()
@@ -208,7 +215,6 @@ func TestReactorStartupFailureReleasesListeners(t *testing.T) {
 	}
 	cfg.ChainID = "test"
 	cfg.AllowNonRoutable = true
-	cfg.Seeds = "not-a-seed-address"
 	addresses := distinctAvailableAddresses(t, 3)
 	cfg.ListenAddr = "tcp://" + addresses[0]
 	cfg.ApiAddr = addresses[1]
@@ -217,8 +223,11 @@ func TestReactorStartupFailureReleasesListeners(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if err := s.Run(t.Context()); err == nil {
-		t.Fatal("invalid seed accepted")
+	reactor := &rejectingStartupReactor{}
+	reactor.BaseReactor = p2p.NewBaseReactor("rejecting startup", reactor)
+	s.sw.AddReactor("rejecting startup", reactor)
+	if err := s.Run(t.Context()); err == nil || !strings.Contains(err.Error(), "injected startup failure") {
+		t.Fatalf("Run error = %v", err)
 	}
 	for _, address := range addresses {
 		listener, err := net.Listen("tcp", address)

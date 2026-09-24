@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/cometbft/cometbft/v2/libs/log"
+	na "github.com/cometbft/cometbft/v2/p2p/netaddr"
 	"github.com/creasty/defaults"
 	"gopkg.in/yaml.v3"
 )
@@ -119,6 +120,11 @@ func (cfg *Config) Validate() error {
 	if _, err := log.AllowLevel(cfg.LogLevel); err != nil {
 		return fmt.Errorf("logLevel: %w", err)
 	}
+	for _, seed := range splitAndTrimEmpty(cfg.Seeds, ",", " ") {
+		if err := validateSeedAddress(seed); err != nil {
+			return fmt.Errorf("seeds: invalid entry %q: %w", seed, err)
+		}
+	}
 	for _, item := range []struct{ name, address string }{{"apiAddr", cfg.ApiAddr}, {"metricsAddr", cfg.MetricsAddr}, {"externalAddress", cfg.ExternalAddress}} {
 		name, address := item.name, item.address
 		if (name == "externalAddress" || name == "metricsAddr") && address == "" {
@@ -145,6 +151,33 @@ func (cfg *Config) Validate() error {
 	}
 	if cfg.MetricsAddr != "" && listenerAddressesOverlap(cfg.ApiAddr, cfg.MetricsAddr) {
 		return errors.New("apiAddr and metricsAddr overlap")
+	}
+	return nil
+}
+
+func validateSeedAddress(seed string) error {
+	if scheme, address, ok := strings.Cut(seed, "://"); ok {
+		if !strings.EqualFold(scheme, "tcp") && !strings.EqualFold(scheme, "udp") {
+			return errors.New("unsupported protocol")
+		}
+		seed = address
+	}
+	parts := strings.Split(seed, "@")
+	if len(parts) != 2 {
+		return errors.New("expected exactly one ID@address separator")
+	}
+	if err := na.ValidateID(parts[0]); err != nil {
+		return fmt.Errorf("invalid peer ID: %w", err)
+	}
+	host, port, err := net.SplitHostPort(parts[1])
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(host) == "" {
+		return errors.New("empty host")
+	}
+	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+		return fmt.Errorf("invalid TCP port: %w", err)
 	}
 	return nil
 }

@@ -182,3 +182,52 @@ func TestConfigValidationOrderAndListenerOverlap(t *testing.T) {
 		}
 	}
 }
+
+func TestConfigValidatesSeedSyntaxWithoutResolvingHostnames(t *testing.T) {
+	const id = "0123456789abcdef0123456789abcdef01234567"
+	tests := []struct {
+		name    string
+		seeds   string
+		wantErr bool
+		bad     string
+	}{
+		{name: "empty"},
+		{name: "empty list entries are ignored", seeds: " ,  , "},
+		{name: "IPv4", seeds: id + "@127.0.0.1:26656"},
+		{name: "IPv6", seeds: id + "@[2001:db8::1]:26656"},
+		{name: "hostnames and trimming", seeds: " " + id + "@seed.example:26656,  " + id + "@other.example:26657 "},
+		{name: "optional TCP prefix", seeds: "tcp://" + id + "@seed.example:26656"},
+		{name: "optional UDP prefix", seeds: "udp://" + id + "@seed.example:26656"},
+		{name: "unresolved hostname", seeds: id + "@seed.invalid:26656"},
+		{name: "missing ID separator", seeds: id + ":26656", wantErr: true, bad: id + ":26656"},
+		{name: "missing ID", seeds: "@seed.example:26656", wantErr: true, bad: "@seed.example:26656"},
+		{name: "malformed ID", seeds: "bad@seed.example:26656", wantErr: true, bad: "bad@seed.example:26656"},
+		{name: "extra ID separator", seeds: id + "@@seed.example:26656", wantErr: true, bad: id + "@@seed.example:26656"},
+		{name: "missing host", seeds: id + "@:26656", wantErr: true, bad: id + "@:26656"},
+		{name: "unbracketed IPv6", seeds: id + "@2001:db8::1:26656", wantErr: true, bad: id + "@2001:db8::1:26656"},
+		{name: "named port", seeds: id + "@seed.example:http", wantErr: true, bad: id + "@seed.example:http"},
+		{name: "negative port", seeds: id + "@seed.example:-1", wantErr: true, bad: id + "@seed.example:-1"},
+		{name: "out of range port", seeds: id + "@seed.example:65536", wantErr: true, bad: id + "@seed.example:65536"},
+		{name: "bad port on unresolved hostname", seeds: id + "@seed.invalid:not-a-port", wantErr: true, bad: id + "@seed.invalid:not-a-port"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := DefaultConfig()
+			if err != nil {
+				t.Fatal(err)
+			}
+			cfg.ChainID = "test"
+			cfg.Seeds = tt.seeds
+			err = cfg.Validate()
+			if tt.wantErr {
+				if err == nil || !strings.Contains(err.Error(), "seeds") || !strings.Contains(err.Error(), tt.bad) {
+					t.Fatalf("Validate(%q) = %v", tt.seeds, err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("Validate(%q) = %v", tt.seeds, err)
+			}
+		})
+	}
+}

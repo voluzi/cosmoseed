@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -129,5 +130,51 @@ func TestShowNodeIDWorksWithoutOperationalConfig(t *testing.T) {
 	}
 	if string(got) != string(original) {
 		t.Fatalf("show-node-id rewrote config: %q", got)
+	}
+}
+
+func TestInvalidSeedOverridesDoNotRewriteConfig(t *testing.T) {
+	const id = "0123456789abcdef0123456789abcdef01234567"
+	for _, tt := range []struct {
+		name  string
+		env   map[string]string
+		flags map[string]string
+		bad   string
+	}{
+		{name: "environment", env: map[string]string{"SEEDS": "bad@seed.invalid:26656"}, bad: "bad@seed.invalid:26656"},
+		{name: "flag", env: map[string]string{"SEEDS": id + "@seed.example:26656"}, flags: map[string]string{"seeds": id + "@seed.invalid:not-a-port"}, bad: id + "@seed.invalid:not-a-port"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "config.yaml")
+			original := []byte("chainID: test\nseeds: " + id + "@seed.example:26656\n")
+			if err := os.WriteFile(path, original, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			lookup := func(key string) (string, bool) { value, ok := tt.env[key]; return value, ok }
+			cfg, err := loadEffectiveConfig(path, lookup, tt.flags)
+			if err == nil {
+				if err := cfg.Save(path); err != nil {
+					t.Fatal(err)
+				}
+				t.Fatal("invalid seed override accepted")
+			}
+			if !strings.Contains(err.Error(), tt.bad) {
+				t.Fatalf("error does not name bad seed: %v", err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if string(got) != string(original) {
+				t.Fatalf("config changed after rejected override: %q", got)
+			}
+			cfg, err = loadEffectiveConfig(path, func(string) (string, bool) { return "", false }, nil)
+			if err != nil {
+				t.Fatalf("override-free reload: %v", err)
+			}
+			if cfg.Seeds != id+"@seed.example:26656" {
+				t.Fatalf("reloaded seeds = %q", cfg.Seeds)
+			}
+		})
 	}
 }
