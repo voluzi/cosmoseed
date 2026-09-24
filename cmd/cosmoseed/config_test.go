@@ -142,7 +142,9 @@ func TestInvalidSeedOverridesDoNotRewriteConfig(t *testing.T) {
 		bad   string
 	}{
 		{name: "environment", env: map[string]string{"SEEDS": "bad@seed.invalid:26656"}, bad: "bad@seed.invalid:26656"},
+		{name: "environment zero port", env: map[string]string{"SEEDS": id + "@seed.invalid:0"}, bad: id + "@seed.invalid:0"},
 		{name: "flag", env: map[string]string{"SEEDS": id + "@seed.example:26656"}, flags: map[string]string{"seeds": id + "@seed.invalid:not-a-port"}, bad: id + "@seed.invalid:not-a-port"},
+		{name: "flag zero port", env: map[string]string{"SEEDS": id + "@seed.example:26656"}, flags: map[string]string{"seeds": id + "@seed.invalid:0"}, bad: id + "@seed.invalid:0"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			path := filepath.Join(t.TempDir(), "config.yaml")

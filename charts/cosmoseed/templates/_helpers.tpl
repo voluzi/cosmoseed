@@ -28,3 +28,17 @@ app.kubernetes.io/instance: {{ .Release.Name }}
 {{- if or (not $tag) (eq $tag "0.0.0") -}}{{- $tag = "latest" -}}{{- end -}}
 {{- printf "%s:%s" .Values.image.repository $tag -}}
 {{- end -}}
+{{- define "cosmoseed.externalPort" -}}
+{{- $address := trim (toString .address) -}}
+{{- $hostname := regexMatch "^[a-zA-Z0-9.-]+:[0-9]+$" $address -}}
+{{- $ipv6 := regexMatch "^\\[[0-9A-Fa-f.]*:[0-9A-Fa-f:.]*\\]:[0-9]+$" $address -}}
+{{- if not (or $hostname $ipv6) -}}
+{{- fail (printf "config.externalAddresses[%d] must be host:port or [IPv6]:port with a decimal port from 1 to 65535 (got %q)" .ordinal $address) -}}
+{{- end -}}
+{{- $digits := regexFind "[0-9]+$" $address -}}
+{{- $port := atoi $digits -}}
+{{- if or (lt $port 1) (gt $port 65535) -}}
+{{- fail (printf "config.externalAddresses[%d] must use a port from 1 to 65535 (got %q)" .ordinal $address) -}}
+{{- end -}}
+{{- $port -}}
+{{- end -}}

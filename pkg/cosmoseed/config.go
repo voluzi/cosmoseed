@@ -176,8 +176,12 @@ func validateSeedAddress(seed string) error {
 	if strings.TrimSpace(host) == "" {
 		return errors.New("empty host")
 	}
-	if _, err := strconv.ParseUint(port, 10, 16); err != nil {
+	parsedPort, err := strconv.ParseUint(port, 10, 16)
+	if err != nil {
 		return fmt.Errorf("invalid TCP port: %w", err)
+	}
+	if parsedPort == 0 {
+		return errors.New("invalid TCP port: must be between 1 and 65535")
 	}
 	return nil
 }

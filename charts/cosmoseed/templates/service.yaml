@@ -24,6 +24,7 @@ metadata:
   {{- end }}
 spec:
   type: ClusterIP
+  publishNotReadyAddresses: true
   selector: {{- include "cosmoseed.selectorLabels" . | nindent 4 }}
   ports:
     - name: metrics
@@ -43,8 +44,7 @@ spec:
     - name: p2p
       port: {{ .Values.ports.p2p }}
       targetPort: p2p
-{{- range $ordinal := until (int .Values.replicaCount) }}
-{{- if $.Values.config.externalAddresses }}
+{{- range $ordinal, $address := .Values.config.externalAddresses }}
 ---
 apiVersion: v1
 kind: Service
@@ -60,7 +60,6 @@ spec:
     statefulset.kubernetes.io/pod-name: {{ include "cosmoseed.fullname" $ }}-{{ $ordinal }}
   ports:
     - name: p2p
-      port: {{ $.Values.ports.p2p }}
+      port: {{ include "cosmoseed.externalPort" (dict "address" $address "ordinal" $ordinal) }}
       targetPort: p2p
-{{- end }}
 {{- end }}
