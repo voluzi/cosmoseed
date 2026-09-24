@@ -49,10 +49,10 @@ test: ## Run all tests without changing dependencies.
 test.race: ## Run tests with the race detector.
 	@go test -race ./... -count=1
 chart.lint: helm ## Lint the Helm chart with a valid test chain.
-	@$(HELM) lint charts/cosmoseed --set config.chainID=test-chain
+	@$(HELM) lint helm/cosmoseed --set config.chainID=test-chain
 chart.template: helm ## Render the Helm chart with a valid test chain.
-	@$(HELM) template test charts/cosmoseed --set config.chainID=test-chain >/dev/null
-	@bash charts/cosmoseed/tests/render.sh "$(HELM)"
+	@$(HELM) template test helm/cosmoseed --set config.chainID=test-chain >/dev/null
+	@bash helm/cosmoseed/tests/render.sh "$(HELM)"
 
 ##@ Build
 $(BUILDDIR):

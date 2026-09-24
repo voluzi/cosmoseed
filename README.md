@@ -41,12 +41,12 @@ The API listens on `apiAddr` (default `0.0.0.0:8080`):
 
 ## Kubernetes
 
-The [Helm chart](charts/cosmoseed) uses a persistent StatefulSet, one PVC per replica, a headless P2P service, separate API and metrics services, health probes, and restrictive pod security settings. Set `config.chainID` and choose a reachable address per replica in `config.externalAddresses` when publishing seeds outside the cluster. With those addresses configured, the chart creates one P2P Service per pod; each Service selects only that pod, avoiding a load-balanced node-ID endpoint. Each P2P Service exposes the port in its corresponding external address (for example, `seed.example:443` exposes 443) and forwards to the pod's internal `ports.p2p`; make the external address reachable on that public port. The metrics Service publishes pod addresses before readiness so scrapes can show startup state; the API Service waits for readiness. Chart and app versions are independent: a chart-only change increments `version`, while `appVersion` names the default image tag. ServiceMonitor is optional and selects only the metrics Service.
+The [Helm chart](helm/cosmoseed) uses a persistent StatefulSet, one PVC per replica, a headless P2P service, separate API and metrics services, health probes, and restrictive pod security settings. Set `config.chainID` and choose a reachable address per replica in `config.externalAddresses` when publishing seeds outside the cluster. With those addresses configured, the chart creates one P2P Service per pod; each Service selects only that pod, avoiding a load-balanced node-ID endpoint. Each P2P Service exposes the port in its corresponding external address (for example, `seed.example:443` exposes 443) and forwards to the pod's internal `ports.p2p`; make the external address reachable on that public port. The metrics Service publishes pod addresses before readiness so scrapes can show startup state; the API Service waits for readiness. Chart and app versions are independent: a chart-only change increments `version`, while `appVersion` names the default image tag. ServiceMonitor is optional and selects only the metrics Service.
 
 If supplying `existingConfigMap`, also set `existingConfigMapChecksum` to a value that changes whenever that ConfigMap's contents change; the chart uses it to trigger a rollout.
 
 ```sh
-helm template seed charts/cosmoseed --set config.chainID=my-chain
+helm template seed helm/cosmoseed --set config.chainID=my-chain
 ```
 
 See [v0.12 migration notes](docs/migration-v0.12.md) before upgrading an existing seed.

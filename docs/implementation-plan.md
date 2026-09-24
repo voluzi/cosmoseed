@@ -37,7 +37,7 @@ the release path, and provides a persistent StatefulSet Helm chart.
 - `cmd/cosmoseed/*` - explicit CLI/env precedence and signal context.
 - `pkg/cosmoseed/*` - configuration, listeners, HTTP, metrics, and lifecycle.
 - `pkg/seedreactor/*` - verification store, scheduling, and address-book wrapper.
-- `charts/cosmoseed/**` - persistent Kubernetes deployment contract.
+- `helm/cosmoseed/**` - persistent Kubernetes deployment contract.
 - `README.md`, `config.example.yaml`, `docs/migration-v0.12.md` - operator docs.
 
 ## Risks & Side Effects
@@ -66,5 +66,5 @@ deferred until the project has reliable measurements and an agreed policy.
 - `git diff --check`
 - `goreleaser check`
 - `goreleaser release --snapshot --clean --skip=publish`
-- `helm lint charts/cosmoseed --set config.chainID=test-chain`
-- `helm template test charts/cosmoseed --set config.chainID=test-chain`
+- `helm lint helm/cosmoseed --set config.chainID=test-chain`
+- `helm template test helm/cosmoseed --set config.chainID=test-chain`
