@@ -1,18 +1,43 @@
 name: Test
 
-on: [ push ]
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   test:
-    runs-on: voluzi-on-prem
+    runs-on: ${{ github.event_name == 'pull_request' && 'ubuntu-latest' || 'voluzi-on-prem' }}
+    timeout-minutes: 20
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
       - name: Setup go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version-file: go.mod
 
       - name: Test
         run: make test
+      - name: Race test
+        run: make test.race
+      - name: Vet
+        run: make vet
+      - name: Lint
+        run: make lint
+      - name: Helm chart
+        run: make chart.lint chart.template
+      - name: GoReleaser snapshot
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+        with:
+          version: '~> v2'
+          args: release --snapshot --clean

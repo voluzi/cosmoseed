@@ -1,0 +1,18 @@
+{{- if .Values.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "cosmoseed.fullname" . }}
+  labels:
+    {{- include "cosmoseed.labels" . | nindent 4 }}
+    {{- with .Values.metrics.serviceMonitor.labels }}{{- toYaml . | nindent 4 }}{{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "cosmoseed.selectorLabels" . | nindent 6 }}
+      cosmoseed.voluzi.com/service-role: metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval | quote }}
+{{- end }}

@@ -2,10 +2,12 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"os"
-	"path"
+	"path/filepath"
+	"strings"
 
-	"github.com/voluzi/cosmoseed/internal/utils"
+	"github.com/voluzi/cosmoseed/pkg/cosmoseed"
 )
 
 const (
@@ -20,38 +22,38 @@ var (
 
 func init() {
 	userHome, _ := os.UserHomeDir()
-	defaultHome := path.Join(userHome, defaultConfigDir)
+	defaultHome := filepath.Join(userHome, defaultConfigDir)
 
 	flag.StringVar(&home,
 		"home",
-		utils.GetString("HOME_DIR", defaultHome),
+		defaultHome,
 		"path to home",
 	)
 	flag.StringVar(&chainID,
 		"chain-id",
-		utils.GetString("CHAIN_ID", ""),
+		"",
 		"chain ID to use",
 	)
 	flag.StringVar(&seeds,
 		"seeds",
-		utils.GetString("SEEDS", ""),
+		"",
 		"seeds to use",
 	)
 	flag.StringVar(&logLevel,
 		"log-level",
-		utils.GetString("LOG_LEVEL", "info"),
+		"",
 		"logging level",
 	)
 	flag.StringVar(&externalAddress,
 		"external-address",
-		utils.GetString("EXTERNAL_ADDRESS", ""),
+		"",
 		"external address to use in format '<host>:<port>'. "+
 			"When pod-name is set, this can be a list separated by comma and index will be extracted "+
 			"from pod name to chose the correct address (useful on kubernetes StatefulSets)",
 	)
 	flag.StringVar(&podName,
 		"pod-name",
-		utils.GetString("POD_NAME", ""),
+		"",
 		"name of the pod when running on kubernetes. When set, node-key-file will be set to pod "+
 			"name and index will be extracted from it to pick the right address from"+
 			"external-address list (comma separated) (useful on kubernetes StatefulSets)",
@@ -60,4 +62,82 @@ func init() {
 	flag.BoolVar(&showVersion, "version", false, "print version and exit")
 	flag.BoolVar(&showNodeID, "show-node-id", false, "print node ID and exit")
 	flag.BoolVar(&configReadOnly, "config-read-only", false, "read-only mode for config file")
+}
+
+func loadEffectiveConfig(path string, lookup func(string) (string, bool), flags map[string]string) (*cosmoseed.Config, error) {
+	cfg, err := cosmoseed.ReadConfigFromFile(path)
+	if err != nil {
+		return nil, err
+	}
+	if cfg == nil {
+		cfg, err = cosmoseed.DefaultConfig()
+		if err != nil {
+			return nil, err
+		}
+	}
+	for _, item := range []struct {
+		env, flag string
+		field     *string
+	}{
+		{"CHAIN_ID", "chain-id", &cfg.ChainID},
+		{"SEEDS", "seeds", &cfg.Seeds},
+		{"LOG_LEVEL", "log-level", &cfg.LogLevel},
+		{"EXTERNAL_ADDRESS", "external-address", &cfg.ExternalAddress},
+	} {
+		if value, ok := lookup(item.env); ok {
+			*item.field = value
+		}
+		if value, ok := flags[item.flag]; ok {
+			*item.field = value
+		}
+	}
+	pod, _ := lookup("POD_NAME")
+	if value, ok := flags["pod-name"]; ok {
+		pod = value
+	}
+	if pod != "" {
+		idx, err := extractIndexFromPodName(pod)
+		if err != nil {
+			return nil, err
+		}
+		if strings.ContainsAny(pod, `/\\`) {
+			return nil, fmt.Errorf("invalid pod name %q", pod)
+		}
+		cfg.NodeKeyFile = pod
+		if cfg.ExternalAddress != "" {
+			if strings.Contains(cfg.ExternalAddress, ",") {
+				addresses := strings.Split(cfg.ExternalAddress, ",")
+				for i := range addresses {
+					addresses[i] = strings.TrimSpace(addresses[i])
+					if addresses[i] == "" {
+						return nil, fmt.Errorf("external address list contains empty entry at index %d", i)
+					}
+				}
+				if idx >= len(addresses) {
+					return nil, fmt.Errorf("pod ordinal %d exceeds %d external addresses", idx, len(addresses))
+				}
+				cfg.ExternalAddress = addresses[idx]
+			} else {
+				cfg.ExternalAddress = strings.TrimSpace(cfg.ExternalAddress)
+				if cfg.ExternalAddress == "" {
+					return nil, fmt.Errorf("external address is empty")
+				}
+			}
+		}
+	}
+	if err := cfg.Validate(); err != nil {
+		return nil, err
+	}
+	return cfg, nil
+}
+
+func resolveHome(defaultHome string, lookup func(string) (string, bool), flags map[string]string) string {
+	home := defaultHome
+	if value, ok := lookup("HOME_DIR"); ok {
+		home = value
+	}
+	if value, ok := flags["home"]; ok {
+		home = value
+	}
+	return home
 }

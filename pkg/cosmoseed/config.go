@@ -3,8 +3,15 @@ package cosmoseed
 import (
 	"errors"
 	"fmt"
+	"io"
+	"net"
 	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"time"
 
+	"github.com/cometbft/cometbft/v2/libs/log"
 	"github.com/creasty/defaults"
 	"gopkg.in/yaml.v3"
 )
@@ -27,7 +34,13 @@ type Config struct {
 	Seeds           string `yaml:"seeds"`
 	ExternalAddress string `yaml:"externalAddress,omitempty"`
 
-	ApiAddr string `yaml:"apiAddr" default:"0.0.0.0:8080"`
+	ApiAddr         string        `yaml:"apiAddr" default:"0.0.0.0:8080"`
+	MetricsAddr     string        `yaml:"metricsAddr" default:"127.0.0.1:9090"`
+	VerificationTTL time.Duration `yaml:"verificationTTL" default:"30m"`
+	RecheckInterval time.Duration `yaml:"recheckInterval" default:"1m"`
+	MinReadyPeers   int           `yaml:"minReadyPeers" default:"1"`
+	MaxDialFailures int           `yaml:"maxDialFailures" default:"5"`
+	BanDuration     time.Duration `yaml:"banDuration" default:"1h"`
 }
 
 func (cfg *Config) Save(path string) error {
@@ -39,7 +52,28 @@ func (cfg *Config) Save(path string) error {
 	if err = ensurePath(path); err != nil {
 		return err
 	}
-	return os.WriteFile(path, b, 0o644)
+	dir := filepath.Dir(path)
+	f, err := os.CreateTemp(dir, ".config-*")
+	if err != nil {
+		return err
+	}
+	defer func() { _ = os.Remove(f.Name()) }()
+	if err := f.Chmod(0o600); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if _, err := f.Write(b); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Sync(); err != nil {
+		_ = f.Close()
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Rename(f.Name(), path)
 }
 
 func DefaultConfig() (*Config, error) {
@@ -55,17 +89,73 @@ func ReadConfigFromFile(path string) (*Config, error) {
 		}
 		return nil, fmt.Errorf("error reading config file: %v", err)
 	}
-	var cfg Config
-	err = yaml.Unmarshal(f, &cfg)
+	cfg, err := DefaultConfig()
 	if err != nil {
-		return nil, fmt.Errorf("error in config file unmarshal: %v", err)
+		return nil, err
 	}
-	return &cfg, defaults.Set(&cfg)
+	decoder := yaml.NewDecoder(strings.NewReader(string(f)))
+	decoder.KnownFields(true)
+	err = decoder.Decode(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("decode config file: %w", err)
+	}
+	var trailing any
+	if err := decoder.Decode(&trailing); err != io.EOF {
+		if err != nil {
+			return nil, fmt.Errorf("decode trailing config: %w", err)
+		}
+		return nil, errors.New("config file contains multiple YAML documents")
+	}
+	return cfg, nil
 }
 
 func (cfg *Config) Validate() error {
 	if cfg.ChainID == "" {
 		return errors.New("chainID is required")
+	}
+	if _, err := log.AllowLevel(cfg.LogLevel); err != nil {
+		return fmt.Errorf("logLevel: %w", err)
+	}
+	for name, address := range map[string]string{"apiAddr": cfg.ApiAddr, "metricsAddr": cfg.MetricsAddr, "externalAddress": cfg.ExternalAddress} {
+		if (name == "externalAddress" || name == "metricsAddr") && address == "" {
+			continue
+		}
+		if err := validateHostPort(address, name == "externalAddress"); err != nil {
+			return fmt.Errorf("%s: %w", name, err)
+		}
+	}
+	if !strings.HasPrefix(cfg.ListenAddr, "tcp://") {
+		return errors.New("listenAddr must use tcp://")
+	}
+	if err := validateHostPort(strings.TrimPrefix(cfg.ListenAddr, "tcp://"), false); err != nil {
+		return fmt.Errorf("listenAddr: %w", err)
+	}
+	if cfg.MaxInboundPeers < 0 || cfg.MaxOutboundPeers < 0 || cfg.MaxPacketMsgPayloadSize <= 0 || cfg.PeerQueueSize <= 0 || cfg.DialWorkers <= 0 {
+		return errors.New("peer limits must be nonnegative; packet size, queue size, and dial workers must be positive")
+	}
+	if cfg.VerificationTTL <= 0 || cfg.RecheckInterval <= 0 || cfg.BanDuration <= 0 {
+		return errors.New("verificationTTL, recheckInterval, and banDuration must be positive")
+	}
+	if cfg.MaxDialFailures <= 0 || cfg.MinReadyPeers < 0 {
+		return errors.New("maxDialFailures must be positive and minReadyPeers nonnegative")
+	}
+	if cfg.MetricsAddr != "" && cfg.ApiAddr == cfg.MetricsAddr {
+		return errors.New("apiAddr and metricsAddr must differ")
+	}
+	return nil
+}
+
+func validateHostPort(address string, requireHost bool) error {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return err
+	}
+	if host == "" && requireHost {
+		return errors.New("empty host")
+	}
+	n, err := strconv.Atoi(port)
+	if err != nil || n < 1 || n > 65535 {
+		return errors.New("invalid TCP port")
 	}
 	return nil
 }

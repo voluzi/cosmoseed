@@ -1,0 +1,29 @@
+{{- if not .Values.existingConfigMap }}
+{{- $chainID := required "config.chainID is required" .Values.config.chainID -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "cosmoseed.fullname" . }}
+  labels: {{- include "cosmoseed.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+data:
+  config.yaml: |
+    chainID: {{ $chainID | quote }}
+    seeds: {{ .Values.config.seeds | quote }}
+    listenAddr: {{ printf "tcp://0.0.0.0:%d" (int .Values.ports.p2p) | quote }}
+    apiAddr: {{ printf "0.0.0.0:%d" (int .Values.ports.http) | quote }}
+    metricsAddr: {{ printf "0.0.0.0:%d" (int .Values.ports.metrics) | quote }}
+    verificationTTL: {{ .Values.config.verificationTTL | quote }}
+    recheckInterval: {{ .Values.config.recheckInterval | quote }}
+    minReadyPeers: {{ .Values.config.minReadyPeers }}
+    maxDialFailures: {{ .Values.config.maxDialFailures }}
+    banDuration: {{ .Values.config.banDuration | quote }}
+    maxInboundPeers: {{ .Values.config.maxInboundPeers }}
+    maxOutboundPeers: {{ .Values.config.maxOutboundPeers }}
+    maxPacketMsgPayloadSize: {{ .Values.config.maxPacketMsgPayloadSize }}
+    peerQueueSize: {{ .Values.config.peerQueueSize }}
+    dialWorkers: {{ .Values.config.dialWorkers }}
+    allowNonRoutable: {{ .Values.config.allowNonRoutable }}
+{{- end }}
