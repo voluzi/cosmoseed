@@ -6,6 +6,7 @@ require (
 	github.com/cometbft/cometbft/api v1.1.0-rc1
 	github.com/cometbft/cometbft/v2 v2.0.0-rc1
 	github.com/creasty/defaults v1.11.0
+	github.com/prometheus/client_golang v1.21.1
 	gopkg.in/yaml.v3 v3.0.1
 )
 
@@ -47,7 +48,6 @@ require (
 	github.com/oasisprotocol/curve25519-voi v0.0.0-20220708102147-0a8a51822cae // indirect
 	github.com/petermattis/goid v0.0.0-20240813172612-4fcff4a6cae7 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
-	github.com/prometheus/client_golang v1.21.1 // indirect
 	github.com/prometheus/client_model v0.6.1 // indirect
 	github.com/prometheus/common v0.62.0 // indirect
 	github.com/prometheus/procfs v0.15.1 // indirect

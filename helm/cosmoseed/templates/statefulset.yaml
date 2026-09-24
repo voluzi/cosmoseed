@@ -1,0 +1,101 @@
+{{- if and .Values.config.externalAddresses (ne (len .Values.config.externalAddresses) (int .Values.replicaCount)) -}}
+{{- fail "config.externalAddresses must contain one address per replica" -}}
+{{- end -}}
+{{- if and .Values.existingConfigMap (not .Values.existingConfigMapChecksum) -}}
+{{- fail "existingConfigMapChecksum is required when existingConfigMap is set" -}}
+{{- end -}}
+{{- range .Values.config.externalAddresses -}}
+{{- if not (trim .) -}}{{- fail "config.externalAddresses must not contain empty entries" -}}{{- end -}}
+{{- end -}}
+{{- if or (eq (int .Values.ports.p2p) (int .Values.ports.http)) (eq (int .Values.ports.p2p) (int .Values.ports.metrics)) (eq (int .Values.ports.http) (int .Values.ports.metrics)) -}}
+{{- fail "ports.p2p, ports.http, and ports.metrics must differ" -}}
+{{- end -}}
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ include "cosmoseed.fullname" . }}
+  labels: {{- include "cosmoseed.labels" . | nindent 4 }}
+  {{- with .Values.commonAnnotations }}
+  annotations: {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  serviceName: {{ include "cosmoseed.fullname" . }}-headless
+  replicas: {{ .Values.replicaCount }}
+  selector:
+    matchLabels: {{- include "cosmoseed.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "cosmoseed.podLabels" . | nindent 8 }}
+      annotations:
+        checksum/config: {{ if .Values.existingConfigMap }}{{ .Values.existingConfigMapChecksum | sha256sum }}{{ else }}{{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}{{ end }}
+        {{- with .Values.podAnnotations }}{{- toYaml . | nindent 8 }}{{- end }}
+    spec:
+      automountServiceAccountToken: false
+      terminationGracePeriodSeconds: 60
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext: {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: cosmoseed
+          image: {{ include "cosmoseed.image" . | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          args: ["--home=/data", "--config-read-only"]
+          securityContext: {{- toYaml .Values.securityContext | nindent 12 }}
+          ports:
+            - {name: p2p, containerPort: {{ .Values.ports.p2p }}}
+            - {name: http, containerPort: {{ .Values.ports.http }}}
+            - {name: metrics, containerPort: {{ .Values.ports.metrics }}}
+          env:
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            {{- if .Values.config.externalAddresses }}
+            - name: EXTERNAL_ADDRESS
+              value: {{ join "," .Values.config.externalAddresses | quote }}
+            {{- end }}
+            {{- with .Values.additionalEnv }}{{- toYaml . | nindent 12 }}{{- end }}
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          livenessProbe:
+            httpGet: {path: /healthz, port: http}
+          readinessProbe:
+            httpGet: {path: /readyz, port: http}
+          startupProbe:
+            httpGet: {path: /healthz, port: http}
+            periodSeconds: 5
+            failureThreshold: 24
+          volumeMounts:
+            - {name: data, mountPath: /data}
+            - {name: config, mountPath: /data/config.yaml, subPath: config.yaml, readOnly: true}
+      volumes:
+        - name: config
+          configMap:
+            name: {{ .Values.existingConfigMap | default (include "cosmoseed.fullname" .) }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.topologySpreadConstraints }}
+      topologySpreadConstraints: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.priorityClassName }}
+      priorityClassName: {{ . | quote }}
+      {{- end }}
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: {{- toYaml .Values.storage.accessModes | nindent 10 }}
+        {{- with .Values.storage.storageClassName }}
+        storageClassName: {{ . | quote }}
+        {{- end }}
+        resources:
+          requests:
+            storage: {{ .Values.storage.size | quote }}

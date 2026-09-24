@@ -5,99 +5,50 @@
 [![Docker Builds](https://github.com/voluzi/cosmoseed/actions/workflows/docker.yml/badge.svg)](https://github.com/voluzi/cosmoseed/actions/workflows/docker.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/voluzi/cosmoseed/blob/main/LICENSE.md)
 
-**Cosmoseed** is a lightweight seed node for Cosmos-based blockchains.  
-Unlike traditional seed implementations, Cosmoseed actively filters out unreachable or failing peers, ensuring that only viable peers are served to clients.
+Cosmoseed is a Cosmos seed node that serves peers only after an authenticated outbound P2P connection. The address book remains a pool of candidates; an old "good" mark or an inbound connection does not make a peer eligible for HTTP or PEX responses. Verification expires after `verificationTTL`, including when rechecks are delayed. A restart begins with no verified peers.
 
----
+## Install and run
 
-## 🚀 Features
+Download a binary from [releases](https://github.com/voluzi/cosmoseed/releases), or build locally with `make build`. The container image is `ghcr.io/voluzi/cosmoseed`. Pushes to `main` publish the multi-architecture `:edge` image. Stable version tags publish their semver tag and `:latest`; prerelease tags publish only their semver tag. Production deployments should pin a version tag or digest.
 
-- Acts as a dedicated **Cosmos seed node**
-- Maintains a strict and adaptive **address book** of peers
-- Fully configurable via `config.yaml` or command-line flags
-- Lightweight, single-binary deployment
-- Exposes a basic **HTTP endpoint** (`/peers`) to retrieve a randomized selection of known good peers
+Copy [config.example.yaml](config.example.yaml) to `~/.cosmoseed/config.yaml`, set `chainID`, and optionally add known seeds. Then run `cosmoseed`. Config resolution is defaults → YAML → explicitly present environment variables → explicitly supplied flags. Only `CHAIN_ID`, `SEEDS`, `LOG_LEVEL`, `EXTERNAL_ADDRESS`, `POD_NAME`, and `HOME_DIR` have environment overrides. Unknown YAML fields are rejected. The effective config is saved atomically with mode `0600`, unless `--config-read-only` is set.
 
----
+`--show-node-id` loads or creates only the node key and prints its ID. It works without `chainID`, does not bind listeners, and does not rewrite `config.yaml`.
 
-## 📦 Installation
+For a one-off invocation:
 
-To quickly install on linux or darwin you can run:
-
-```bash
-$ curl -s https://get.voluzi.com/cosmoseed! | bash
+```sh
+cosmoseed --chain-id my-chain --seeds 'nodeid@seed.example:26656'
 ```
 
-Alternatively, you can download the binary from releases or use the available docker image.
+`--external-address` accepts a host and port, including `[2001:db8::1]:26656` for IPv6. With `--pod-name` or `POD_NAME`, a comma-separated external address list must contain the address at that pod's zero-based ordinal; a single address is also accepted for any ordinal. Invalid or missing list entries fail startup. Pod names also select a distinct node key file. An explicit `--home` wins over `HOME_DIR`.
 
----
+## Endpoints
 
-## 🛠 Configuration
+The API listens on `apiAddr` (default `0.0.0.0:8080`):
 
-By default, Cosmoseed reads its config from:
+| Path | Response |
+| --- | --- |
+| `/` | This seed's `nodeID@host:port` |
+| `/peers` | Comma-separated verified peer addresses, for existing clients |
+| `/peers?limit=20&format=json` | JSON array of address, ID, IP, port, verified, last verification time, and age in seconds |
+| `/peers?format=toml` | Paste-ready `persistent_peers = "..."` |
+| `/healthz` | Process liveness |
+| `/readyz` | Running and at least `minReadyPeers` fresh verified peers (default 1) |
+| `/status` | Version, chain ID, readiness, verified and candidate counts |
 
-```bash
-~/.cosmoseed/config.yaml
+`limit` is 1–100. `verified=false` is rejected; the API cannot serve unverified candidates. The default JSON empty result is `[]`. `/status` and metrics report the full fresh verified count even when peer responses are capped at 100. Metrics are exposed only on `metricsAddr` (default `127.0.0.1:9090`) at `/metrics`; set it to empty to disable the listener. Each seed instance has its own registry. The chart intentionally binds metrics to `0.0.0.0:9090` for its metrics Service.
+
+## Kubernetes
+
+The [Helm chart](helm/cosmoseed) uses a persistent StatefulSet, one PVC per replica, a headless P2P service, separate API and metrics services, health probes, and restrictive pod security settings. Set `config.chainID` and choose a reachable address per replica in `config.externalAddresses` when publishing seeds outside the cluster. With those addresses configured, the chart creates one P2P Service per pod; each Service selects only that pod, avoiding a load-balanced node-ID endpoint. Each P2P Service exposes the port in its corresponding external address (for example, `seed.example:443` exposes 443) and forwards to the pod's internal `ports.p2p`; make the external address reachable on that public port. The metrics Service publishes pod addresses before readiness so scrapes can show startup state; the API Service waits for readiness. Chart and app versions are independent: a chart-only change increments `version`, while `appVersion` names the default image tag. ServiceMonitor is optional and selects only the metrics Service.
+
+If supplying `existingConfigMap`, also set `existingConfigMapChecksum` to a value that changes whenever that ConfigMap's contents change; the chart uses it to trigger a rollout.
+
+```sh
+helm template seed helm/cosmoseed --set config.chainID=my-chain
 ```
 
-If it does not exist, Cosmoseed will create a new configuration file with the following defaults:
+See [v0.12 migration notes](docs/migration-v0.12.md) before upgrading an existing seed.
 
-```yaml
-nodeKeyFile: node_key.json
-addrBookFile: addrbook.json
-addrBookStrict: true
-listenAddr: tcp://0.0.0.0:26656
-logLevel: info
-maxInboundPeers: 2000
-maxOutboundPeers: 20
-maxPacketMsgPayloadSize: 1024
-peerQueueSize: 1000
-dialWorkers: 20
-chainID: ""
-seeds: ""
-apiAddr: 0.0.0.0:8080
-```
-
-Please note that `chainID` and `seeds` are required fields. You can either include them in the config file or pass them as command-line flags.
-
-Once Cosmoseed starts and grabs the first peers, the address book will contain peers and `seeds` can then be omitted on following application starts.
-
----
-
-## ⚙️ Command-Line Flags
-
-```bash
-$ cosmoseed --help
-
-Usage of cosmoseed:
-  -chain-id string
-    	Chain ID to use
-  -home string
-    	Path to config/data directory (default "~/.cosmoseed")
-  -log-level string
-    	Logging level (default "info")
-  -seeds string
-    	Comma-separated list of seed peers
-  -show-node-id
-    	Print node ID and exit
-  -version
-    	Print version and exit
-```
-
-Flags take precedence over values defined in `config.yaml`.
-
----
-
-## 🧪 Example Usage
-
-```bash
-$ cosmoseed \
-  -chain-id nibiru-testnet-2 \
-  -seeds c2f87136e1a8b1c4469ff5a65b6cb3d6aca2b5fd@34.79.42.220:26656
-```
-
----
-
-## ✨ Credits
-
-Inspired by [`tenderseed`](https://github.com/binaryholdings/tenderseed) and the broader Cosmos ecosystem.
+Inspired by [`tenderseed`](https://github.com/binaryholdings/tenderseed) and the Cosmos ecosystem.

@@ -1,0 +1,16 @@
+{{- if .Values.metrics.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "cosmoseed.fullname" . }}
+  labels: {{- mergeOverwrite (deepCopy (default dict .Values.metrics.serviceMonitor.labels)) (include "cosmoseed.labels" . | fromYaml) | toYaml | nindent 4 }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "cosmoseed.selectorLabels" . | nindent 6 }}
+      cosmoseed.voluzi.com/service-role: metrics
+  endpoints:
+    - port: metrics
+      path: /metrics
+      interval: {{ .Values.metrics.serviceMonitor.interval | quote }}
+{{- end }}

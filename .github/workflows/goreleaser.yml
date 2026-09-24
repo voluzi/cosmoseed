@@ -3,25 +3,35 @@ name: GoReleaser
 on:
   push:
     tags:
-      - "*"
+      - "v*.*.*"
 
-permissions:
-  contents: write
+permissions: {}
 
 jobs:
   goreleaser:
-    runs-on: voluzi-on-prem
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v7
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+
+      - name: Check GoReleaser config
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
+        with:
+          version: '~> v2'
+          args: check
 
       - name: Run GoReleaser
-        uses: goreleaser/goreleaser-action@v7
+        uses: goreleaser/goreleaser-action@f06c13b6b1a9625abc9e6e439d9c05a8f2190e94 # v7
         with:
           version: '~> v2'
           args: release --clean

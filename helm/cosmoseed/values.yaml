@@ -1,0 +1,75 @@
+replicaCount: 1
+image:
+  repository: ghcr.io/voluzi/cosmoseed
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+existingConfigMap: ""
+existingConfigMapChecksum: ""
+config:
+  chainID: ""
+  seeds: ""
+  verificationTTL: 30m
+  recheckInterval: 1m
+  minReadyPeers: 1
+  maxDialFailures: 5
+  banDuration: 1h
+  maxInboundPeers: 2000
+  maxOutboundPeers: 20
+  maxPacketMsgPayloadSize: 1024
+  peerQueueSize: 1000
+  dialWorkers: 20
+  allowNonRoutable: false
+  externalAddresses: []
+ports:
+  p2p: 26656
+  http: 8080
+  metrics: 9090
+service:
+  type: ClusterIP
+  annotations: {}
+p2pService:
+  type: LoadBalancer
+  annotations: {}
+metricsService:
+  annotations: {}
+metrics:
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
+storage:
+  size: 1Gi
+  storageClassName: ""
+  accessModes: [ReadWriteOnce]
+resources:
+  requests:
+    cpu: 100m
+    memory: 128Mi
+  limits:
+    cpu: "1"
+    memory: 512Mi
+podSecurityContext:
+  runAsNonRoot: true
+  runAsUser: 65532
+  runAsGroup: 65532
+  fsGroup: 65532
+  seccompProfile:
+    type: RuntimeDefault
+securityContext:
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: true
+  capabilities:
+    drop: [ALL]
+podAnnotations: {}
+podLabels: {}
+commonAnnotations: {}
+commonLabels: {}
+nodeSelector: {}
+affinity: {}
+tolerations: []
+topologySpreadConstraints: []
+priorityClassName: ""
+additionalEnv: []

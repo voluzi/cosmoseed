@@ -4,13 +4,14 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"path"
 	"strconv"
 	"strings"
-	"syscall"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cometbft/cometbft/v2/config"
@@ -32,14 +33,26 @@ type Seeder struct {
 	logger log.Logger
 
 	transport *tcp.MultiplexTransport
-	book      p2p.AddrBook
+	book      pex.AddrBook
 	pex       *seedreactor.SeedReactor
 	sw        *p2p.Switch
 
-	httpServer *http.Server
+	httpServer         *http.Server
+	metricsServer      *http.Server
+	stopOnce           sync.Once
+	transportCloseOnce sync.Once
+	stopCh             chan struct{}
+	stopErr            error
+	running            atomic.Bool
+	mu                 sync.Mutex
+	startMu            sync.Mutex
+	startFailed        bool
 }
 
 func NewSeeder(home string, config *Config) (*Seeder, error) {
+	if err := config.Validate(); err != nil {
+		return nil, err
+	}
 	logOpt, err := log.AllowLevel(config.LogLevel)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize log options: %w", err)
@@ -91,6 +104,10 @@ func NewSeeder(home string, config *Config) (*Seeder, error) {
 		config.PeerQueueSize,
 		config.DialWorkers,
 		!config.AllowNonRoutable,
+		config.VerificationTTL,
+		config.RecheckInterval,
+		config.MaxDialFailures,
+		config.BanDuration,
 	)
 	pexReactor.SetLogger(logger)
 
@@ -98,7 +115,7 @@ func NewSeeder(home string, config *Config) (*Seeder, error) {
 	sw := p2p.NewSwitch(p2pConfig, transport)
 	sw.SetNodeKey(nodeKey)
 	sw.SetLogger(logger)
-	sw.SetAddrBook(book)
+	sw.SetAddrBook(pexReactor.ServingBook())
 	sw.AddReactor("pex", pexReactor)
 	nodeInfo := generateNodeInfo(nodeKey, config)
 	sw.SetNodeInfo(nodeInfo)
@@ -112,13 +129,46 @@ func NewSeeder(home string, config *Config) (*Seeder, error) {
 		book:      book,
 		pex:       pexReactor,
 		sw:        sw,
+		stopCh:    make(chan struct{}),
 	}, nil
 }
 
 func (s *Seeder) Start() error {
-	if err := s.cfg.Validate(); err != nil {
+	return s.Run(context.Background())
+}
+
+func (s *Seeder) Run(ctx context.Context) error {
+	if err := ctx.Err(); err != nil {
 		return err
 	}
+	s.startMu.Lock()
+	s.mu.Lock()
+	if s.running.Load() {
+		s.mu.Unlock()
+		s.startMu.Unlock()
+		return errors.New("seeder already running")
+	}
+	select {
+	case <-s.stopCh:
+		s.mu.Unlock()
+		s.startMu.Unlock()
+		return errors.New("seeder already stopped")
+	default:
+	}
+	if s.startFailed {
+		s.mu.Unlock()
+		s.startMu.Unlock()
+		return errors.New("seeder already stopped")
+	}
+	s.mu.Unlock()
+	startupFinished := false
+	defer func() {
+		if !startupFinished {
+			s.startFailed = true
+			s.startMu.Unlock()
+			_ = s.Stop()
+		}
+	}()
 
 	s.logger.Info("starting cosmoseed node",
 		"version", Version,
@@ -132,51 +182,106 @@ func (s *Seeder) Start() error {
 		return err
 	}
 
+	apiListener, err := net.Listen("tcp", s.cfg.ApiAddr)
+	if err != nil {
+		return fmt.Errorf("listen API: %w", err)
+	}
+	var metricsListener net.Listener
+	if s.cfg.MetricsAddr != "" {
+		metricsListener, err = net.Listen("tcp", s.cfg.MetricsAddr)
+		if err != nil {
+			_ = apiListener.Close()
+			return fmt.Errorf("listen metrics: %w", err)
+		}
+	}
 	if err = s.transport.Listen(*addr); err != nil {
+		_ = apiListener.Close()
+		if metricsListener != nil {
+			_ = metricsListener.Close()
+		}
 		return err
 	}
-
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	go func() {
-		<-sigChan
-		s.logger.Info("shutting down...")
-		if err = s.Stop(); err != nil {
-			panic(err)
-		}
-	}()
-
 	if err = s.sw.Start(); err != nil {
+		_ = apiListener.Close()
+		if metricsListener != nil {
+			_ = metricsListener.Close()
+		}
 		return err
 	}
 
 	mux := http.NewServeMux()
 	s.registerRoutes(mux)
 
+	s.mu.Lock()
 	s.httpServer = &http.Server{
-		Addr:    s.cfg.ApiAddr,
-		Handler: mux,
+		Addr:              s.cfg.ApiAddr,
+		Handler:           mux,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       10 * time.Second,
+		WriteTimeout:      10 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
-
-	s.logger.Info("HTTP server starting", "addr", s.httpServer.Addr)
-	if err = s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-		s.logger.Error("HTTP server failed", "err", err)
+	if metricsListener != nil {
+		s.metricsServer = &http.Server{Addr: s.cfg.MetricsAddr, Handler: s.metricsHandler(), ReadHeaderTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second, WriteTimeout: 10 * time.Second, IdleTimeout: 60 * time.Second}
 	}
-	return nil
+	s.running.Store(true)
+	s.mu.Unlock()
+	startupFinished = true
+	s.startMu.Unlock()
+	errorsCh := make(chan error, 2)
+	go func() { errorsCh <- s.httpServer.Serve(apiListener) }()
+	if metricsListener != nil {
+		go func() { errorsCh <- s.metricsServer.Serve(metricsListener) }()
+	}
+	select {
+	case <-ctx.Done():
+	case <-s.stopCh:
+	case err = <-errorsCh:
+	}
+	stopErr := s.Stop()
+	if err != nil && !errors.Is(err, http.ErrServerClosed) {
+		return fmt.Errorf("serve listener: %w", err)
+	}
+	return stopErr
 }
 
 func (s *Seeder) Stop() error {
-	s.book.Save()
-	if err := s.sw.Stop(); err != nil {
-		return err
-	}
-	if s.httpServer != nil {
+	s.stopOnce.Do(func() {
+		close(s.stopCh)
+		s.startMu.Lock()
+		defer s.startMu.Unlock()
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		s.logger.Info("shutting down HTTP server")
-		return s.httpServer.Shutdown(ctx)
-	}
-	return nil
+		s.mu.Lock()
+		api, metrics := s.httpServer, s.metricsServer
+		s.mu.Unlock()
+		if api != nil {
+			if err := api.Shutdown(ctx); err != nil {
+				s.stopErr = errors.Join(s.stopErr, err)
+			}
+		}
+		if metrics != nil {
+			if err := metrics.Shutdown(ctx); err != nil {
+				s.stopErr = errors.Join(s.stopErr, err)
+			}
+		}
+		if s.sw.IsRunning() {
+			if err := s.sw.Stop(); err != nil {
+				s.stopErr = errors.Join(s.stopErr, err)
+			}
+		} else if s.pex.IsRunning() {
+			if err := s.pex.Stop(); err != nil {
+				s.stopErr = errors.Join(s.stopErr, err)
+			}
+		} else if s.book.IsRunning() {
+			if err := s.book.Stop(); err != nil {
+				s.stopErr = errors.Join(s.stopErr, err)
+			}
+		}
+		s.transportCloseOnce.Do(func() { s.stopErr = errors.Join(s.stopErr, s.transport.Close()) })
+		s.running.Store(false)
+	})
+	return s.stopErr
 }
 
 func (s *Seeder) GetNodeID() string {
@@ -185,8 +290,9 @@ func (s *Seeder) GetNodeID() string {
 
 func (s *Seeder) GetP2pAddress() string {
 	if s.cfg.ExternalAddress != "" {
-		if parts := strings.Split(s.cfg.ExternalAddress, ":"); len(parts) == 2 {
-			return parts[0]
+		host, _, err := net.SplitHostPort(s.cfg.ExternalAddress)
+		if err == nil {
+			return host
 		}
 	}
 
@@ -201,20 +307,16 @@ func (s *Seeder) GetP2pAddress() string {
 
 func (s *Seeder) GetP2pPort() int {
 	if s.cfg.ExternalAddress != "" {
-		if parts := strings.Split(s.cfg.ExternalAddress, ":"); len(parts) == 2 {
-			port, err := strconv.Atoi(parts[1])
-			if err == nil {
-				return port
-			}
+		_, port, err := net.SplitHostPort(s.cfg.ExternalAddress)
+		if err == nil {
+			parsed, _ := strconv.Atoi(port)
+			return parsed
 		}
 	}
-
-	parts := strings.Split(s.cfg.ListenAddr, ":")
-	if len(parts) > 1 {
-		port, err := strconv.Atoi(parts[len(parts)-1])
-		if err == nil {
-			return port
-		}
+	_, port, err := net.SplitHostPort(strings.TrimPrefix(s.cfg.ListenAddr, "tcp://"))
+	if err == nil {
+		parsed, _ := strconv.Atoi(port)
+		return parsed
 	}
 
 	// If everything above fails just return default port
@@ -222,7 +324,7 @@ func (s *Seeder) GetP2pPort() int {
 }
 
 func (s *Seeder) GetFullAddress() string {
-	return fmt.Sprintf("%s@%s:%d", s.GetNodeID(), s.GetP2pAddress(), s.GetP2pPort())
+	return fmt.Sprintf("%s@%s", s.GetNodeID(), net.JoinHostPort(s.GetP2pAddress(), strconv.Itoa(s.GetP2pPort())))
 }
 
 func generateP2PConfig(home string, cfg *Config) *config.P2PConfig {

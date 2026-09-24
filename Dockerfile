@@ -6,7 +6,7 @@ ARG COMMIT
 ENV VERSION=$VERSION
 ENV COMMIT=$COMMIT
 
-RUN apk add make
+RUN apk add --no-cache bash make
 
 WORKDIR /workspace
 COPY go.mod go.sum* ./
