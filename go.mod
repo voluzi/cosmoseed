@@ -2,6 +2,8 @@ module github.com/voluzi/cosmoseed
 
 go 1.27.0
 
+toolchain go1.27.3
+
 require (
 	github.com/cometbft/cometbft/api v1.1.0-rc1
 	github.com/cometbft/cometbft/v2 v2.0.0-rc1
