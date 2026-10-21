@@ -2,7 +2,7 @@ VERSION ?= $(shell git describe --tags --abbrev=0 2>/dev/null || echo dev)
 COMMIT ?= $(shell git rev-parse --short HEAD)
 override BUILDDIR := $(CURDIR)/build
 LOCALBIN ?= $(CURDIR)/bin
-GOLANGCI_LINT_VERSION ?= v2.13.2
+GOLANGCI_LINT_VERSION ?= v2.15.0
 GOLANGCI_LINT ?= $(LOCALBIN)/golangci-lint-$(GOLANGCI_LINT_VERSION)
 HELM_VERSION ?= v4.2.4
 HELM ?= $(LOCALBIN)/helm-$(HELM_VERSION)
